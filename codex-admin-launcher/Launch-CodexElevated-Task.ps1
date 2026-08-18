@@ -1,16 +1,16 @@
 <#
 .SYNOPSIS
-    Launch OpenAI Codex (MSIX) Desktop as Administrator with NO UAC prompt, via a
-    pre-authorized Scheduled Task (RunLevel=HighestAvailable).
+    Launch OpenAI Codex (MSIX) Desktop silently (no UAC) via a pre-authorized
+    Scheduled Task.
 .DESCRIPTION
-    NOTE / correction to earlier docs: an MSIX app CAN be elevated silently via a
-    Scheduled Task as long as you target the package's real Win32 worker binary
-    (app\ChatGPT.exe for Codex), not the MSIX package AUMID. The task scheduler
-    (SYSTEM) launches it with the pre-approved highest token, bypassing both UAC
-    and the RuntimeBroker that would otherwise force Medium integrity. This was
-    verified against Claude's app\Claude.exe (IL=12288 High, no UAC); Codex's
-    app\ChatGPT.exe follows the same runFullTrust pattern.
-    Path resolved dynamically via Get-AppxPackage so upgrades need no edit.
+    IMPORTANT (verified 2026-08-18): Codex's MSIX entry app\ChatGPT.exe is forced
+    to MEDIUM integrity by AAM/RuntimeBroker -- neither RunAs nor a Highest
+    scheduled task can raise the MAIN process to High. This task therefore does
+    NOT make ChatGPT.exe admin. Instead it launches Codex silently (no UAC), and
+    admin file writes (hosts, system dirs) are performed by Codex's BUILT-IN
+    elevated sandbox: configure [windows] sandbox = "elevated" in config.toml, and
+    Codex spawns an admin command-runner child for privileged ops.
+    Path resolved dynamically via Get-AppxPackage so MSIX upgrades need no edit.
     Keep this file pure ASCII (zh-CN PowerShell reads .ps1 as GBK without BOM).
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File Launch-CodexElevated-Task.ps1
@@ -36,12 +36,11 @@ if ($running) {
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $existing) {
-    Write-Host "Registering scheduled task '$TaskName' (run once as highest)..."
+    Write-Host "Registering scheduled task '$TaskName' (no-UAC launch)..."
     $action = New-ScheduledTaskAction -Execute $exe
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
     Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -ErrorAction Stop | Out-Null
 }
 
-Write-Host "Launching Codex as Administrator (silent, no UAC)..."
+Write-Host "Launching Codex (silent, no UAC). Admin writes use Codex elevated sandbox."
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "Done. Verify in Codex: whoami /groups -> S-1-16-12288 (High)."
